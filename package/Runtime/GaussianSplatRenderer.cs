@@ -10,6 +10,7 @@ using Unity.Profiling.LowLevel;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
+using System.Linq;
 
 namespace GaussianSplatting.Runtime
 {
@@ -358,6 +359,36 @@ namespace GaussianSplatting.Runtime
 
         const int kGpuViewDataSize = 40;
 
+        /// <summary>
+        /// My customed properties
+        /// </summary>
+        public GameObject targetGameObject { get; set; }
+        /// <summary>
+        /// My customed methods
+        /// </summary>
+        public float[] GetLargerArrayFromNativeArray(NativeArray<float> sourceArray, int targetLength)
+        {
+            int sourceLength = sourceArray.Length;
+
+            // Allocate the new array
+            float[] largerArray = new float[targetLength];
+
+            // Copy elements from the NativeArray efficiently
+            sourceArray.CopyTo(largerArray);
+
+            // Handle remaining elements (if needed)
+            int remainingElements = targetLength % sourceLength;
+            if (remainingElements > 0)
+            {
+            for (int i = 0; i < remainingElements; i++)
+            {
+                int sourceIndex = (targetLength / sourceLength) * sourceLength + i; // Calculate index in largerArray
+                largerArray[sourceIndex] = sourceArray[i % sourceLength]; // Repeat elements from the beginning
+            }
+            }
+
+            return largerArray;
+        }/// 
         void CreateResourcesForAsset()
         {
             if (!HasValidAsset)
@@ -454,6 +485,41 @@ namespace GaussianSplatting.Runtime
             ComputeShader cs = m_CSSplatUtilities;
             int kernelIndex = (int) kernel;
             cmb.SetComputeBufferParam(cs, kernelIndex, Props.SplatPos, m_GpuPosData);
+
+            // get triangle center coords
+            var meshProcessor = FindObjectOfType<GetMeshTrianglesGlobalAsArray>();
+            System.Single[] triangleCenterCoords = null;
+            if (meshProcessor != null)
+            {
+                targetGameObject = meshProcessor.gameObject; // Assuming the script is on the same GameObject
+                // ... (process triangle coordinates using meshProcessor or targetGameObject) ...
+                triangleCenterCoords = meshProcessor.GetTriangleCenterCoords();
+                Debug.Log("GaussianSplattingRenderer.SetAssetDataOnCS: Triangle center coords: " + triangleCenterCoords.Length);
+            }
+            else
+            {
+                Debug.LogError("GaussianSplattingRenderer.SetAssetDataOnCS: GetMeshTrianglesGlobalAsArray script not found in scene!");
+            }
+            
+            // var gaussPosData = m_Asset.posData.GetData<float>();
+            // int desiredLength = gaussPosData.Length;
+            // float[] trigsPosData = GetLargerArrayFromNativeArray(triangleCenterCoords, desiredLength);
+            
+            // periodically move gaussians //////////////////////////////////////////////
+            // var posData_checker = asset.posData.GetData<float>();
+            // Debug.Log(posData_checker.Length);
+            // for (int i = 0; i < asset.splatCount * 3; i++)
+            // {
+            //     // The 1D array stores coordinates in X,Y,Z order.
+            //     // Namely, [x0, y0, z0, x1, y1, z1,...]
+            //     if (i % 3 == 2) // x direction
+            //     {
+            //     posData_checker[i] += Mathf.Sin(Time.realtimeSinceStartup) * 0.2f;
+            //     }
+            // }
+            // m_GpuPosData.SetData(posData_checker);
+            // ///////////////////////////////////////////////////////////////////////////////
+
             cmb.SetComputeBufferParam(cs, kernelIndex, Props.SplatChunks, m_GpuChunks);
             cmb.SetComputeBufferParam(cs, kernelIndex, Props.SplatOther, m_GpuOtherData);
             cmb.SetComputeBufferParam(cs, kernelIndex, Props.SplatSH, m_GpuSHData);
@@ -603,8 +669,20 @@ namespace GaussianSplatting.Runtime
             cmd.EndSample(s_ProfSort);
         }
 
+        public void Start()
+        {
+            Debug.Log("GaussianSplatRenderer.Start()");
+            // GetMeshTrianglesGlobalAsArray meshProcessor = GetComponent<GetMeshTrianglesGlobalAsArray>();
+            // if (meshProcessor == null)
+            // {
+                // Debug.LogError("GaussianSplatRenderer.Start(): GetMeshTrianglesGlobalAsArray script not found!");
+            // }
+        }
         public void Update()
         {
+            Debug.Log("GaussianSplatRenderer.Update()");
+        
+
             var curHash = m_Asset ? m_Asset.dataHash : new Hash128();
             if (m_PrevAsset != m_Asset || m_PrevHash != curHash)
             {
